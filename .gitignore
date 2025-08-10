@@ -1,0 +1,7 @@
+.claude
+.vcs
+node_modules
+dist
+
+.llms/orchestration/
+.idea/

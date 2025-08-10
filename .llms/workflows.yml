@@ -1,0 +1,61 @@
+# AI Agent Orchestrator Workflows
+# Define custom workflow steps for different project sizes
+
+workflows:
+  micro:
+    description: "Single file, trivial changes"
+    steps:
+      - scope_analysis
+      - implementation
+      - validation
+
+  small:
+    description: "2-3 files, straightforward implementation"
+    steps:
+      - scope_analysis
+      - context_gathering
+      - implementation
+      - validation
+
+  medium:
+    description: "Multiple files, moderate complexity"
+    steps:
+      - scope_analysis
+      - context_gathering
+      - solution_design
+      - implementation
+      - validation
+      - documentation
+
+  large:
+    description: "Many files, significant architecture changes"
+    steps:
+      - scope_analysis
+      - context_gathering
+      - solution_design
+      - implementation
+      - validation
+      - documentation
+      - knowledge_capture
+
+  epic:
+    description: "Major feature requiring decomposition"
+    steps:
+      - scope_analysis
+      - context_gathering
+      - solution_design
+      - implementation
+      - validation
+      - documentation
+      - knowledge_capture
+
+default:
+  description: "Default workflow for unspecified types"
+  steps:
+    - scope_analysis
+    - context_gathering
+    - solution_design
+    - implementation
+    - validation
+    - documentation
+    - knowledge_capture
