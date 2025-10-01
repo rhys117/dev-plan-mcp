@@ -110,6 +110,38 @@ class PlanServer {
           }
         },
         {
+          name: 'create_validation_fix_subplan',
+          description: 'Create a fix subplan when validation finds issues, enabling iterative testing loops',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              planFile: {
+                type: 'string',
+                description: 'Path to the parent plan file',
+                default: '.llms/.dev-plan-main.yaml'
+              },
+              issues: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'List of validation issues that need fixing'
+              },
+              workflow: {
+                type: 'string',
+                enum: ['micro', 'small', 'medium'],
+                description: 'Workflow type for fix (typically micro or small)',
+                default: 'small'
+              },
+              priority: {
+                type: 'string',
+                enum: ['high', 'medium', 'low'],
+                description: 'Fix priority',
+                default: 'high'
+              }
+            },
+            required: ['planFile', 'issues']
+          }
+        },
+        {
           name: 'update_plan',
           description: 'Update a development plan stage',
           inputSchema: {
@@ -416,6 +448,8 @@ class PlanServer {
           return await this.createPlan(args);
         case 'create_subtask_plan':
           return await this.createSubtaskPlan(args);
+        case 'create_validation_fix_subplan':
+          return await this.createValidationFixSubplan(args);
         case 'update_plan':
           return await this.updatePlan(args);
         case 'read_plan':
@@ -574,6 +608,137 @@ class PlanServer {
 🛠️  Workflow: ${workflow}
 📅 Priority: ${priority || 'medium'}
 🔄 Status: ${status || 'active'}`
+      }]
+    };
+  }
+
+  private async createValidationFixSubplan(args: any) {
+    const { planFile, issues, workflow = 'small', priority = 'high' } = args;
+
+    // Resolve plan file path
+    const resolvedPlanFile = path.isAbsolute(planFile) ? planFile : path.resolve(process.cwd(), planFile);
+
+    // Load parent plan
+    let parentPlan: Plan;
+    try {
+      const content = await fs.readFile(resolvedPlanFile, 'utf-8');
+      parentPlan = yaml.load(content) as Plan;
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        return {
+          content: [{
+            type: 'text',
+            text: `❌ Parent plan file not found: ${planFile}`
+          }]
+        };
+      }
+      throw new McpError(ErrorCode.InternalError, `Error reading parent plan: ${error.message}`);
+    }
+
+    // Ensure parent plan has validation progress
+    if (!parentPlan.progress.validation) {
+      return {
+        content: [{
+          type: 'text',
+          text: `❌ Parent plan is not at validation stage yet`
+        }]
+      };
+    }
+
+    // Initialize fix_cycles if needed
+    const validationProgress = parentPlan.progress.validation as any;
+    validationProgress.fix_cycles = validationProgress.fix_cycles || [];
+
+    // Determine cycle number
+    const cycleNumber = validationProgress.fix_cycles.length + 1;
+
+    // Create subtask directory structure
+    const parentPlanBasename = path.basename(resolvedPlanFile, '.yaml');
+    const parentDir = path.dirname(resolvedPlanFile);
+    const subtasksDir = path.join(parentDir, parentPlanBasename, 'subtasks');
+    await fs.mkdir(subtasksDir, { recursive: true });
+
+    // Generate fix subplan
+    const fixDescription = `Fix validation issues - Cycle ${cycleNumber}`;
+    const fixSlug = generateSlug(`fix-validation-cycle-${cycleNumber}`);
+    const fixPlanFile = path.join(subtasksDir, `.dev-plan-${fixSlug}.yaml`);
+
+    // Check if fix plan already exists
+    try {
+      await fs.access(fixPlanFile);
+      return {
+        content: [{
+          type: 'text',
+          text: `❌ Fix plan for cycle ${cycleNumber} already exists: ${fixPlanFile}`
+        }]
+      };
+    } catch {}
+
+    // Create fix subplan with appropriate workflow for fixes
+    const fixPlan = await generatePlan(fixDescription, fixSlug, {
+      workflow: workflow as WorkflowType,
+      priority: priority as PriorityType,
+      status: 'active',
+      type: 'subtask'
+    });
+
+    // Add parent plan reference
+    fixPlan.parent_plan = {
+      file: resolvedPlanFile,
+      task: parentPlan.task,
+      slug: parentPlan.slug
+    };
+    fixPlan.type = 'subtask';
+    fixPlan.parent_task = parentPlan.task;
+
+    // Write fix subplan
+    await fs.writeFile(fixPlanFile, yaml.dump(fixPlan));
+
+    // Update parent plan's validation progress with fix cycle
+    validationProgress.fix_cycles.push({
+      cycle: cycleNumber,
+      subplan_file: fixPlanFile,
+      issues: issues,
+      created: new Date().toISOString(),
+      status: 'active',
+      resolved: false
+    });
+    validationProgress.validation_status = 'awaiting_fixes';
+    validationProgress.issues_found = issues;
+    validationProgress.complete = false;
+
+    // Update parent plan sub_tasks array
+    parentPlan.sub_tasks = parentPlan.sub_tasks || [];
+    parentPlan.sub_tasks.push({
+      description: fixDescription,
+      slug: fixSlug,
+      priority: priority,
+      status: 'independent',
+      type: 'independent_plan',
+      plan_file: fixPlanFile,
+      created: new Date().toISOString()
+    });
+    parentPlan.updated = new Date().toISOString();
+
+    // Save updated parent plan
+    await fs.writeFile(resolvedPlanFile, yaml.dump(parentPlan));
+
+    return {
+      content: [{
+        type: 'text',
+        text: `✅ Validation fix subplan created!
+📁 Fix plan: ${fixPlanFile}
+🔄 Cycle: ${cycleNumber}
+📝 Issues to fix (${issues.length}):
+${issues.map((issue: string, i: number) => `   ${i + 1}. ${issue}`).join('\n')}
+🛠️  Workflow: ${workflow}
+📅 Priority: ${priority}
+
+💡 Once fixes are implemented and tested in the subplan:
+1. Mark the fix subplan as complete
+2. Re-run validation on the parent plan
+3. If validation passes, mark validation stage as complete
+4. If issues remain, create another fix cycle`
       }]
     };
   }

@@ -35,7 +35,7 @@ export interface Progress {
   context_gathering: StageProgress;
   solution_design: SolutionDesignProgress;
   implementation: ImplementationProgress;
-  validation: StageProgress;
+  validation: ValidationProgress;
   documentation: DocumentationProgress;
   knowledge_capture: StageProgress;
 }
@@ -54,6 +54,21 @@ export interface SolutionDesignProgress extends StageProgress {
 
 export interface ImplementationProgress extends StageProgress {
   changes?: any[];
+}
+
+export interface ValidationProgress extends StageProgress {
+  validation_status?: 'passed' | 'failed' | 'awaiting_fixes' | 'in_progress';
+  issues_found?: string[];
+  fix_cycles?: FixCycle[];
+}
+
+export interface FixCycle {
+  cycle: number;
+  subplan_file: string;
+  issues: string[];
+  created: string;
+  status: 'active' | 'completed' | 'failed';
+  resolved: boolean;
 }
 
 export interface DocumentationProgress extends StageProgress {

@@ -38,7 +38,10 @@ export function createStageProgress(stage: string): any {
     case 'validation':
       return {
         complete: false,
-        results: {}
+        results: {},
+        validation_status: 'in_progress',
+        issues_found: [],
+        fix_cycles: []
       };
     case 'documentation':
       return {

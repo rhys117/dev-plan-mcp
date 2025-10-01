@@ -40,11 +40,12 @@ PLAN UPDATES:
 Use MCP update_plan tool to update the development plan:
 
 ```typescript
-// Update validation results
+// Update validation results when tests PASS
 await mcp.update_plan({
   planFile: ".llms/.dev-plan-[slug].yaml",
   stage: "validation",
   sectionData: {
+    validation_status: "passed",
     results: {
       test_results: {
         "unit_tests": { "passed": 15, "failed": 0, "total": 15 },
@@ -72,15 +73,58 @@ await mcp.update_plan({
     },
     validation_summary: "All tests pass, functionality verified against requirements",
     issues_found: [],
-    recommendations: ["Consider adding rate limiting for password reset requests"],
-    next_phase: "documentation"
+    recommendations: ["Consider adding rate limiting for password reset requests"]
   }
 });
 ```
 
+VALIDATION FAILED - CREATE FIX SUBPLAN:
+When validation finds issues that need fixing, use the create_validation_fix_subplan tool to initiate a fix cycle:
+
+```typescript
+// Create fix subplan when issues are found
+await mcp.create_validation_fix_subplan({
+  planFile: ".llms/.dev-plan-[slug].yaml",
+  issues: [
+    "Unit test failing: Authentication.test.js - password reset flow",
+    "Integration test timeout: API takes >30s to respond",
+    "Missing error handling for expired tokens"
+  ],
+  workflow: "small",  // or "micro" for very small fixes
+  priority: "high"
+});
+
+// Then update validation status to reflect awaiting fixes
+await mcp.update_plan({
+  planFile: ".llms/.dev-plan-[slug].yaml",
+  stage: "validation",
+  incomplete: true,  // Don't mark as complete yet
+  sectionData: {
+    validation_status: "awaiting_fixes",
+    results: {
+      test_results: {
+        "unit_tests": { "passed": 12, "failed": 3, "total": 15 }
+      }
+    },
+    validation_summary: "Tests failed - fix subplan created for cycle 1"
+  }
+});
+```
+
+VALIDATION FIX WORKFLOW:
+1. Run tests and identify failures
+2. If tests fail, call create_validation_fix_subplan with the list of issues
+3. The fix subplan will go through: scope_analysis → implementation → validation
+4. Once fix subplan is complete, re-run validation on parent plan
+5. If validation passes, mark as complete
+6. If issues remain, create another fix cycle (cycle 2, 3, etc.)
+
+This creates an iterative test-fix loop until all validation passes.
+
 EXPECTED JSON STRUCTURE for validation:
 ```json
 {
+  "validation_status": "passed|failed|awaiting_fixes|in_progress",
   "results": {
     "test_results": {
       "unit_tests": { "passed": 15, "failed": 0, "total": 15 },
@@ -96,9 +140,18 @@ EXPECTED JSON STRUCTURE for validation:
     "requirements_verification": ["✅/❌ requirement status"]
   },
   "validation_summary": "Overall validation results",
-  "issues_found": ["list of any issues discovered"],
+  "issues_found": ["list of any issues discovered (used for fix subplans)"],
   "recommendations": ["suggestions for improvements"],
-  "next_phase": "documentation"
+  "fix_cycles": [
+    {
+      "cycle": 1,
+      "subplan_file": ".llms/.dev-plan-main/subtasks/.dev-plan-fix-validation-cycle-1.yaml",
+      "issues": ["issue 1", "issue 2"],
+      "created": "ISO timestamp",
+      "status": "active|completed|failed",
+      "resolved": false
+    }
+  ]
 }
 ```
 
